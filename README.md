@@ -1,16 +1,34 @@
-# React + Vite
+# ShopGuard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Vehicle inspection management app built for auto customs shops.
 
-Currently, two official plugins are available:
+## What It Does
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+ShopGuard guides technicians through a structured vehicle walkaround inspection — documenting the condition of every panel, glass, light, and wheel before and after work is performed. It's designed to protect the shop from false damage claims and give customers a clear record of their vehicle's condition.
 
-## React Compiler
+**Key Features**
+- Hybrid 5-section inspection flow (Front → Right → Rear → Top → Left)
+- Expandable sub-zones for granular per-panel documentation
+- Multi-condition tagging (Clean, Damaged, Noted — stackable)
+- "Not Present" toggle for missing parts
+- Damaged zones require photo or description before continuing
+- Customer info, vehicle details, and VIN capture with auto-formatting
+- Signature pad for customer acknowledgment
+- PDF export via print view
+- Completion gating — no export until every zone is inspected
+- Dark/light theme
+- Mobile-first with rear camera integration
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech Stack
 
-## Expanding the ESLint configuration
+- **Frontend:** React + Vite
+- **Backend:** Supabase (PostgreSQL, Auth, Storage)
+- **Hosting:** TBD
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Status
+
+🚧 In active development — frontend complete, backend integration in progress.
+
+## License
+
+Proprietary. All rights reserved.
