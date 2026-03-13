@@ -1495,7 +1495,7 @@ function ReportModal({ inspections, jobInfo, signature, onClose, onExportPDF, on
    APP
    ═══════════════════════════════════════════ */
 
-export default function App() {
+export default function App({ profile, onSignOut }) {
   const [dark, setDark] = useState(true);
   const [vehicleType, setVehicleType] = useState("sedan");
   const [showVehicleMenu, setShowVehicleMenu] = useState(false);
@@ -1503,7 +1503,10 @@ export default function App() {
   const [selectedSection, setSelectedSection] = useState(null);
   const [selectedZone, setSelectedZone] = useState(null);
   const [showReport, setShowReport] = useState(false);
-  const [jobInfo, setJobInfo] = useState(DEFAULT_JOB_INFO);
+  const [jobInfo, setJobInfo] = useState({
+  ...DEFAULT_JOB_INFO,
+  techName: profile?.full_name || "",
+});
   const [showJobInfo, setShowJobInfo] = useState(true);
   const [signature, setSignature] = useState(null);
   const [showSignature, setShowSignature] = useState(false);
@@ -1552,7 +1555,7 @@ export default function App() {
       <style>{getStyles(dark)}</style>
 
       {/* Header */}
-      <header className="app-header">
+<header className="app-header">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div className="logo-icon">🔍</div>
           <div>
@@ -1560,9 +1563,27 @@ export default function App() {
             <MonoLabel style={{ fontSize: 9, letterSpacing: 3 }}>Vehicle Inspection</MonoLabel>
           </div>
         </div>
-        <button onClick={() => setDark((d) => !d)} className="theme-toggle">
-          {dark ? "☀️  LIGHT" : "🌙  DARK"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {profile && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#f97316", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#fff" }}>
+                {profile.full_name?.charAt(0)?.toUpperCase() || "?"}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--tx)", lineHeight: 1.1 }}>{profile.full_name}</span>
+                <span style={{ fontSize: 9, fontFamily: "'DM Mono', monospace", color: "var(--mu)", letterSpacing: 1, textTransform: "uppercase" }}>{profile.role}</span>
+              </div>
+            </div>
+          )}
+          <button onClick={() => setDark((d) => !d)} className="theme-toggle">
+            {dark ? "☀️" : "🌙"}
+          </button>
+          {onSignOut && (
+            <button onClick={onSignOut} className="theme-toggle" style={{ color: "#ef4444" }}>
+              ↪ Out
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Toolbar */}

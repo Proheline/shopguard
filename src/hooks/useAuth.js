@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supaBase } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 
 export function useAuth() {
     const [user, setUser] = useState(null)
@@ -8,7 +8,8 @@ export function useAuth() {
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
-            if (session?.user ?? null)
+            setUser(session?.user ?? null)
+            if (session?.user) fetchProfile(session.user.id)
             else setLoading(false)
         })
 
@@ -37,15 +38,15 @@ export function useAuth() {
     }
     
     async function signIn(email, password) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
     })
     return { error }
 
     }
-     async function SignUp(email, password, fullName) {
-        const { error } = await supaBase.auth.signUp({
+     async function signUp(email, password, fullName) {
+        const { error } = await supabase.auth.signUp({
             email,
             password,
             options: {
@@ -61,8 +62,6 @@ export function useAuth() {
         setProfile(null)
      }  
 
-     return { user, profile, loading, signIn, SignUp, signOut }
-                
-            
+     return { user, profile, loading, signIn, signUp, signOut }
         
-
+    }
