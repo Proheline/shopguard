@@ -479,7 +479,7 @@ function SectionDetail({ section, inspections, onUpdateZone, onSelectZone, onBac
    ZONE INSPECTION PANEL
    ═══════════════════════════════════════════ */
 
-function ZoneInspection({ zone, section, data, onUpdate, onBack, onBackToOverview, onNext, nextNav, inspections }) {
+function ZoneInspection({ zone, section, data, onUpdate, onBack, onBackToOverview, onNext, nextNav, inspections, isLocked }) {
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
   const photos = data?.photos || [];
@@ -500,6 +500,7 @@ function ZoneInspection({ zone, section, data, onUpdate, onBack, onBackToOvervie
   };
 
   const toggleNotPresent = () => {
+    if (isLocked) return;
     if (!notPresent) {
       onUpdate(zone.id, { notPresent: true, status: [], notes: "", photos: [] });
     } else {
@@ -508,6 +509,7 @@ function ZoneInspection({ zone, section, data, onUpdate, onBack, onBackToOvervie
   };
 
   const toggleCondition = (condId) => {
+    if (isLocked) return;
     const next = statuses.includes(condId)
       ? statuses.filter((s) => s !== condId)
       : [...statuses, condId];
@@ -538,6 +540,14 @@ function ZoneInspection({ zone, section, data, onUpdate, onBack, onBackToOvervie
         </div>
       </div>
 
+      {/* Locked indicator */}
+      {isLocked && (
+        <div style={{ padding: "8px 12px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 7, marginBottom: 14, fontSize: 11, fontFamily: "'DM Mono', monospace", color: "#ef4444", textAlign: "center" }}>
+          🔒 Read only — this inspection has been signed
+        </div>
+      )}
+
+      <div style={{ opacity: isLocked ? 0.5 : 1, pointerEvents: isLocked ? "none" : "auto" }}>
       {/* Not Present */}
       <button onClick={toggleNotPresent} className="not-present-btn"
         style={{
@@ -654,6 +664,7 @@ function ZoneInspection({ zone, section, data, onUpdate, onBack, onBackToOvervie
           </div>
         </>
       )}
+      </div>
 
       {/* ── Navigation Buttons ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--bd)" }}>
@@ -715,6 +726,34 @@ function formatVin(raw) {
   return raw.replace(/[^A-HJ-NPR-Z0-9]/gi, "").toUpperCase().slice(0, 17);
 }
 
+async function decodeVin(vin) {
+  if (!vin || vin.length !== 17) return null;
+  try {
+    const res = await fetch(`https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/${vin}?format=json`);
+    const json = await res.json();
+    const results = json.Results || [];
+    const get = (id) => {
+      const item = results.find((r) => r.VariableId === id);
+      return item?.Value && item.Value !== "Not Applicable" && item.Value !== "" ? item.Value : null;
+    };
+    return {
+      year: get(29),
+      make: get(26),
+      model: get(28),
+      trim: get(38),
+      bodyClass: get(5),
+      driveType: get(15),
+      engineCylinders: get(9),
+      displacementL: get(13),
+      fuelType: get(24),
+      errorCode: get(143),
+    };
+  } catch (err) {
+    console.error("VIN decode failed:", err);
+    return null;
+  }
+}
+
 function InfoField({ label, value, onChange, placeholder, required, size, formatter, inputMode, maxLength, uppercase }) {
   const handleChange = (e) => {
     const raw = e.target.value;
@@ -755,12 +794,38 @@ function InfoField({ label, value, onChange, placeholder, required, size, format
   );
 }
 
-function JobInfoBar({ jobInfo, onUpdate, expanded, onToggle }) {
+function JobInfoBar({ jobInfo, onUpdate, expanded, onToggle, isLocked }) {
+  const [vinStatus, setVinStatus] = useState(null); // null | "loading" | "success" | "error" | "invalid"
   const complete = isJobInfoComplete(jobInfo);
   const missing = getMissingJobFields(jobInfo);
   const vehicleSummary = [jobInfo.vehicleYear, jobInfo.vehicleMake, jobInfo.vehicleModel].filter(Boolean).join(" ");
 
   const set = (field) => (val) => onUpdate({ ...jobInfo, [field]: val });
+
+  const handleVinChange = async (val) => {
+    const formatted = formatVin(val);
+    onUpdate({ ...jobInfo, vehicleVin: formatted });
+
+    if (formatted.length === 17) {
+      setVinStatus("loading");
+      const decoded = await decodeVin(formatted);
+      if (decoded && decoded.make && decoded.errorCode !== "1") {
+        onUpdate({
+          ...jobInfo,
+          vehicleVin: formatted,
+          vehicleYear: decoded.year || jobInfo.vehicleYear,
+          vehicleMake: decoded.make || jobInfo.vehicleMake,
+          vehicleModel: decoded.model || jobInfo.vehicleModel,
+        });
+        setVinStatus("success");
+      } else {
+        setVinStatus(decoded?.errorCode === "1" ? "invalid" : "error");
+      }
+      setTimeout(() => setVinStatus(null), 4000);
+    } else {
+      setVinStatus(null);
+    }
+  };
 
   return (
     <div className="job-info-bar">
@@ -793,7 +858,7 @@ function JobInfoBar({ jobInfo, onUpdate, expanded, onToggle }) {
 
       {/* Expanded form */}
       {expanded && (
-        <div className="job-info-form slide-in">
+        <div className="job-info-form slide-in" style={{ opacity: isLocked ? 0.5 : 1, pointerEvents: isLocked ? "none" : "auto" }}>
           {/* Customer */}
           <MonoLabel style={{ marginBottom: 8, marginTop: 4, fontSize: 9 }}>Customer</MonoLabel>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
@@ -809,7 +874,32 @@ function JobInfoBar({ jobInfo, onUpdate, expanded, onToggle }) {
             <InfoField label="Make" value={jobInfo.vehicleMake} onChange={set("vehicleMake")} placeholder="Toyota" required size="md" maxLength={20} />
             <InfoField label="Model" value={jobInfo.vehicleModel} onChange={set("vehicleModel")} placeholder="Camry" required size="lg" maxLength={40} />
             <InfoField label="Color" value={jobInfo.vehicleColor} onChange={set("vehicleColor")} placeholder="Midnight Black" size="lg" />
-            <InfoField label="VIN" value={jobInfo.vehicleVin} onChange={set("vehicleVin")} placeholder="1HGCM82633A004352" required size="lg" formatter={formatVin} maxLength={17} uppercase />
+            <div style={{ flex: "1 1 160px", minWidth: 140 }}>
+              <div style={{ fontSize: 9, fontFamily: "'DM Mono', monospace", color: "var(--mu)", letterSpacing: 1.5, marginBottom: 3, textTransform: "uppercase" }}>
+                VIN <span style={{ color: "#f97316", marginLeft: 3 }}>*</span>
+                {vinStatus === "loading" && <span style={{ color: "#3b82f6", marginLeft: 6 }}>DECODING...</span>}
+                {vinStatus === "success" && <span style={{ color: "#22c55e", marginLeft: 6 }}>✓ AUTO-FILLED</span>}
+                {vinStatus === "invalid" && <span style={{ color: "#ef4444", marginLeft: 6 }}>INVALID VIN</span>}
+                {vinStatus === "error" && <span style={{ color: "#f97316", marginLeft: 6 }}>DECODE FAILED</span>}
+              </div>
+              <input
+                type="text"
+                value={jobInfo.vehicleVin}
+                onChange={(e) => handleVinChange(e.target.value)}
+                placeholder="Paste or type VIN — auto-fills Year, Make, Model"
+                className="info-input"
+                maxLength={17}
+                style={{
+                  borderColor: !jobInfo.vehicleVin?.trim() ? "rgba(249,115,22,0.4)" : vinStatus === "success" ? "rgba(34,197,94,0.5)" : vinStatus === "invalid" ? "rgba(239,68,68,0.5)" : undefined,
+                  textTransform: "uppercase",
+                  fontFamily: "'DM Mono', monospace",
+                  letterSpacing: 1.5,
+                }}
+              />
+              <div style={{ fontSize: 9, fontFamily: "'DM Mono', monospace", color: "var(--mu)", marginTop: 3, opacity: 0.6 }}>
+                {jobInfo.vehicleVin ? `${jobInfo.vehicleVin.length}/17` : "17 characters"}
+              </div>
+            </div>
             <InfoField label="Mileage" value={jobInfo.vehicleMileage} onChange={set("vehicleMileage")} placeholder="45,230" size="sm" formatter={formatMileage} inputMode="numeric" />
             <InfoField label="License Plate" value={jobInfo.vehiclePlate} onChange={set("vehiclePlate")} placeholder="ABC-1234" size="sm" maxLength={10} uppercase />
           </div>
@@ -837,7 +927,7 @@ function JobInfoBar({ jobInfo, onUpdate, expanded, onToggle }) {
    OVERVIEW PANEL
    ═══════════════════════════════════════════ */
 
-function OverviewPanel({ sections, inspections, isFullyReady, isComplete, jobInfo, onOpenReport, onOpenSignature, signature }) {
+function OverviewPanel({ sections, inspections, isFullyReady, isComplete, jobInfo, onOpenReport, onOpenSignature, signature, isLocked, isSigned }) {
   return (
     <div className="panel" style={{ padding: "28px 20px" }}>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
@@ -861,13 +951,15 @@ function OverviewPanel({ sections, inspections, isFullyReady, isComplete, jobInf
               Fill in all required job info fields to unlock export
             </div>
           )}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
-            <button onClick={onOpenReport} className="nav-btn nav-next" style={{ padding: "14px 8px", opacity: isFullyReady ? 1 : 0.4, pointerEvents: isFullyReady ? "auto" : "none" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isLocked ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 8 }}>
+            <button onClick={onOpenReport} className="nav-btn nav-next" style={{ padding: "14px 8px", opacity: isFullyReady || isSigned ? 1 : 0.4, pointerEvents: isFullyReady || isSigned ? "auto" : "none" }}>
               📄 View Report
             </button>
-            <button onClick={onOpenSignature} className="nav-btn nav-next" style={{ padding: "14px 8px" }}>
-              ✍️ {signature ? "Update Signature" : "Capture Signature"}
-            </button>
+            {!isLocked && (
+              <button onClick={onOpenSignature} className="nav-btn nav-next" style={{ padding: "14px 8px" }}>
+                ✍️ {signature ? "Update Signature" : "Capture Signature"}
+              </button>
+            )}
           </div>
           {signature && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 7, marginBottom: 8 }}>
@@ -1235,7 +1327,7 @@ function PrintableReport({ jobInfo, inspections, signature, onClose }) {
    REPORT MODAL
    ═══════════════════════════════════════════ */
 
-function ReportModal({ inspections, jobInfo, signature, onClose, onExportPDF, onOpenSignature }) {
+function ReportModal({ inspections, jobInfo, signature, onClose, onExportPDF, onOpenSignature, isLocked }) {
   const npZones = SUB_ZONES.filter((z) => inspections[z.id]?.notPresent);
   const activeZones = SUB_ZONES.filter((z) => !inspections[z.id]?.notPresent);
   const damaged = activeZones.filter((z) => hasStatus(inspections[z.id], "damaged"));
@@ -1385,9 +1477,28 @@ function ReportModal({ inspections, jobInfo, signature, onClose, onExportPDF, on
 
         {/* ── Export / Signature — gated behind completion ── */}
         <div style={{ marginTop: 20, borderTop: "1px solid var(--bd)", paddingTop: 16 }}>
-          {isReady ? (
+          {isLocked ? (
             <>
-              {/* Signature status */}
+              {/* Signed and locked — read only */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, padding: "10px 14px", background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 8 }}>
+                <img src={signature} alt="Signature" style={{ height: 32, borderRadius: 3, border: "1px solid #ddd" }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#22c55e" }}>Signed &amp; Locked</div>
+                  <div style={{ fontSize: 10, fontFamily: "'DM Mono', monospace", color: "var(--mu)" }}>{jobInfo.customerName || "Customer"}</div>
+                </div>
+                <span style={{ fontSize: 14 }}>🔒</span>
+              </div>
+              <button onClick={onExportPDF} className="export-btn" style={{ background: "#22c55e", color: "#fff", width: "100%" }}>
+                <span style={{ fontSize: 16 }}>📄</span>
+                <span>Export PDF</span>
+              </button>
+              <div style={{ marginTop: 8, textAlign: "center", fontSize: 10, fontFamily: "'DM Mono', monospace", color: "var(--mu)" }}>
+                This inspection is signed and locked — PDF export only
+              </div>
+            </>
+          ) : isReady ? (
+            <>
+              {/* Ready — show full controls */}
               {signature ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, padding: "10px 14px", background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 8 }}>
                   <img src={signature} alt="Signature" style={{ height: 32, borderRadius: 3, border: "1px solid #ddd" }} />
@@ -1495,7 +1606,7 @@ function ReportModal({ inspections, jobInfo, signature, onClose, onExportPDF, on
    APP
    ═══════════════════════════════════════════ */
 
-export default function App({ profile, onSignOut }) {
+export default function App({ profile, onSignOut, onBackToList, inspection, loadedData }) {
   const [dark, setDark] = useState(true);
   const [vehicleType, setVehicleType] = useState("sedan");
   const [showVehicleMenu, setShowVehicleMenu] = useState(false);
@@ -1504,17 +1615,115 @@ export default function App({ profile, onSignOut }) {
   const [selectedZone, setSelectedZone] = useState(null);
   const [showReport, setShowReport] = useState(false);
   const [jobInfo, setJobInfo] = useState({
-  ...DEFAULT_JOB_INFO,
-  techName: profile?.full_name || "",
-});
+    ...DEFAULT_JOB_INFO,
+    techName: profile?.full_name || "",
+  });
   const [showJobInfo, setShowJobInfo] = useState(true);
   const [signature, setSignature] = useState(null);
   const [showSignature, setShowSignature] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
+  const [dbReady, setDbReady] = useState(false);
+  const [inspectionStatus, setInspectionStatus] = useState("in_progress");
+  const [adminOverride, setAdminOverride] = useState(false);
+  const saveTimerRef = useRef(null);
+
+  const isAdmin = profile?.role === "admin";
+  const isSigned = inspectionStatus === "signed";
+  const isLocked = isSigned && !(isAdmin && adminOverride);
+
+  // Load existing inspection data if provided
+  useEffect(() => {
+    if (loadedData) {
+      setJobInfo({
+        ...loadedData.jobInfo,
+        techName: loadedData.jobInfo.techName || profile?.full_name || "",
+      });
+      // Convert photos from DB format (objects with url/id/storagePath) to display format
+      const converted = {};
+      Object.entries(loadedData.inspections).forEach(([zoneId, zoneData]) => {
+        converted[zoneId] = {
+          ...zoneData,
+          photos: (zoneData.photos || []).map(p => typeof p === 'string' ? p : p.url),
+          _photoMeta: zoneData.photos || [], // Keep metadata for delete operations
+        };
+      });
+      setInspections(converted);
+      setSignature(loadedData.signature);
+      setInspectionStatus(loadedData.inspection?.status || "in_progress");
+      setAdminOverride(false);
+      setDbReady(true);
+      setShowJobInfo(false);
+    }
+  }, [loadedData, profile]);
+
+  // Save zone to database (debounced)
+  const saveZoneToDb = useCallback((zoneId, zoneData) => {
+    if (!inspection?.inspectionId && !dbReady) return;
+    const inspId = inspection?.inspectionId;
+    if (!inspId) return;
+
+    const zone = SUB_ZONES.find(z => z.id === zoneId);
+    if (!zone) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      inspection.saveZoneResult(inspId, zoneId, zone.section, zoneData);
+    }, 500);
+  }, [inspection, dbReady]);
 
   const updateZone = useCallback((zoneId, updates) => {
-    setInspections((prev) => ({ ...prev, [zoneId]: { ...prev[zoneId], ...updates } }));
-  }, []);
+    if (isLocked) return;
+    setInspections((prev) => {
+      const updated = { ...prev, [zoneId]: { ...prev[zoneId], ...updates } };
+      const zoneData = updated[zoneId];
+      saveZoneToDb(zoneId, zoneData);
+      return updated;
+    });
+  }, [saveZoneToDb, isLocked]);
+
+  // Auto-save job info with debounce
+  const jobInfoTimerRef = useRef(null);
+  const handleJobInfoUpdate = useCallback((newJobInfo) => {
+    if (isLocked) return;
+    setJobInfo(newJobInfo);
+    if (!inspection?.inspectionId) return;
+    if (jobInfoTimerRef.current) clearTimeout(jobInfoTimerRef.current);
+    jobInfoTimerRef.current = setTimeout(() => {
+      inspection.updateJobInfo(inspection.inspectionId, newJobInfo);
+    }, 1000);
+  }, [inspection]);
+
+  // Create inspection in DB when they start the first zone (ensures job info exists)
+  const ensureInspectionExists = useCallback(async () => {
+    if (inspection?.inspectionId) return inspection.inspectionId;
+    if (!isJobInfoComplete(jobInfo)) return null;
+
+    const result = await inspection.createInspection(jobInfo);
+    if (result.data) {
+      setDbReady(true);
+      return result.data.id;
+    }
+    return null;
+  }, [inspection, jobInfo]);
+
+  // Handle signature save (also saves to DB)
+  const handleSignatureSave = useCallback(async (sig) => {
+    setSignature(sig);
+    setShowSignature(false);
+    if (inspection?.inspectionId) {
+      await inspection.saveSignature(inspection.inspectionId, sig);
+      setInspectionStatus("signed");
+    }
+  }, [inspection]);
+
+  // Handle export PDF (mark as completed first)
+  const handleExportPDF = useCallback(async () => {
+    if (inspection?.inspectionId) {
+      await inspection.markComplete(inspection.inspectionId);
+    }
+    setShowReport(false);
+    setShowPrint(true);
+  }, [inspection]);
 
   const activeZones = SUB_ZONES.filter((z) => !inspections[z.id]?.notPresent);
   const flaggedCount = activeZones.filter((z) => isFlagged(inspections[z.id])).length;
@@ -1550,13 +1759,24 @@ export default function App({ profile, onSignOut }) {
 
   const goToOverview = () => { setSelectedZone(null); setSelectedSection(null); };
 
+  // When entering a zone, ensure DB record exists
+  const handleSelectZone = useCallback(async (zoneId) => {
+    setSelectedZone(zoneId);
+    await ensureInspectionExists();
+  }, [ensureInspectionExists]);
+
   return (
     <div style={{ background: "var(--bg)", color: "var(--tx)", minHeight: "100vh", fontFamily: "'Rajdhani', sans-serif" }}>
       <style>{getStyles(dark)}</style>
 
       {/* Header */}
-<header className="app-header">
+      <header className="app-header">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {onBackToList && (
+            <button onClick={onBackToList} className="theme-toggle" style={{ marginRight: 4, fontSize: 16, padding: "6px 10px" }}>
+              ←
+            </button>
+          )}
           <div className="logo-icon">🔍</div>
           <div>
             <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: 2, lineHeight: 1, color: "var(--tx)" }}>SHOPGUARD</div>
@@ -1589,7 +1809,7 @@ export default function App({ profile, onSignOut }) {
       {/* Toolbar */}
       <div className="toolbar">
         <div style={{ position: "relative" }}>
-          <button onClick={() => setShowVehicleMenu((v) => !v)} className="vehicle-picker-btn">
+          <button onClick={() => { if (!isLocked) setShowVehicleMenu((v) => !v); }} className="vehicle-picker-btn" style={{ opacity: isLocked ? 0.5 : 1, cursor: isLocked ? "default" : "pointer" }}>
             <span>🚗</span>
             <span style={{ flex: 1, textAlign: "left" }}>{VEHICLE_TYPES.find((v) => v.id === vehicleType)?.label}</span>
             <span style={{ color: "var(--mu)", fontSize: 11 }}>▾</span>
@@ -1616,10 +1836,49 @@ export default function App({ profile, onSignOut }) {
           <ToolbarStat value={activeZones.length} label="ZONES" color="var(--mu)" showDivider />
           {npCount > 0 && <ToolbarStat value={npCount} label="N/P" color="#ef4444" showDivider />}
         </div>
+        {inspection?.saving && (
+          <span style={{ fontSize: 10, fontFamily: "'DM Mono', monospace", color: "#3b82f6", letterSpacing: 1 }}>SAVING...</span>
+        )}
       </div>
 
+      {/* Locked Banner */}
+      {isSigned && (
+        <div style={{ background: isLocked ? "rgba(239,68,68,0.08)" : "rgba(249,115,22,0.08)", borderBottom: `1px solid ${isLocked ? "rgba(239,68,68,0.2)" : "rgba(249,115,22,0.2)"}`, padding: "8px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16 }}>{isLocked ? "🔒" : "🔓"}</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: isLocked ? "#ef4444" : "#f97316" }}>
+                {isLocked ? "Inspection Signed — Read Only" : "Admin Edit Mode — Changes Are Being Tracked"}
+              </div>
+              <div style={{ fontSize: 10, fontFamily: "'DM Mono', monospace", color: "var(--mu)" }}>
+                {isLocked
+                  ? (isAdmin ? "Tap unlock to make changes" : "This inspection has been signed and cannot be edited")
+                  : "Be careful — this inspection was already signed by the customer"
+                }
+              </div>
+            </div>
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                if (!adminOverride) {
+                  if (window.confirm("This inspection has been signed by the customer. Are you sure you want to make changes? All edits will be tracked.")) {
+                    setAdminOverride(true);
+                  }
+                } else {
+                  setAdminOverride(false);
+                }
+              }}
+              style={{ background: isLocked ? "#ef4444" : "var(--s2)", border: isLocked ? "none" : "1px solid var(--bd)", borderRadius: 6, padding: "6px 14px", color: isLocked ? "#fff" : "var(--mu)", fontSize: 12, fontWeight: 700, fontFamily: "'Rajdhani', sans-serif", cursor: "pointer", letterSpacing: 0.5 }}
+            >
+              {isLocked ? "🔓 Unlock" : "🔒 Re-lock"}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Job Info Bar */}
-      <JobInfoBar jobInfo={jobInfo} onUpdate={setJobInfo} expanded={showJobInfo} onToggle={() => setShowJobInfo((v) => !v)} />
+      <JobInfoBar jobInfo={jobInfo} onUpdate={handleJobInfoUpdate} expanded={showJobInfo} onToggle={() => setShowJobInfo((v) => !v)} isLocked={isLocked} />
 
       {/* Main */}
       <div className="main-layout">
@@ -1659,13 +1918,14 @@ export default function App({ profile, onSignOut }) {
               onBackToOverview={goToOverview}
               onNext={handleNextNav}
               nextNav={nextNav}
+              isLocked={isLocked}
             />
           ) : selectedSection && currentSection ? (
             <SectionDetail
               section={currentSection}
               inspections={inspections}
               onUpdateZone={updateZone}
-              onSelectZone={(id) => setSelectedZone(id)}
+              onSelectZone={handleSelectZone}
               onBack={() => setSelectedSection(null)}
             />
           ) : (
@@ -1677,7 +1937,9 @@ export default function App({ profile, onSignOut }) {
               jobInfo={jobInfo}
               signature={signature}
               onOpenReport={() => setShowReport(true)}
-              onOpenSignature={() => setShowSignature(true)}
+              onOpenSignature={() => { if (!isLocked) setShowSignature(true); }}
+              isLocked={isLocked}
+              isSigned={isSigned}
             />
           )}
         </div>
@@ -1690,14 +1952,15 @@ export default function App({ profile, onSignOut }) {
           jobInfo={jobInfo}
           signature={signature}
           onClose={() => setShowReport(false)}
-          onExportPDF={() => { setShowReport(false); setShowPrint(true); }}
-          onOpenSignature={() => { setShowReport(false); setShowSignature(true); }}
+          onExportPDF={handleExportPDF}
+          onOpenSignature={() => { if (!isLocked) { setShowReport(false); setShowSignature(true); } }}
+          isLocked={isLocked}
         />
       )}
-      {showSignature && (
+      {showSignature && !isLocked && (
         <SignatureModal
           existingSignature={signature}
-          onSave={(sig) => { setSignature(sig); setShowSignature(false); }}
+          onSave={handleSignatureSave}
           onClose={() => setShowSignature(false)}
         />
       )}
