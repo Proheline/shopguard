@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { supabase } from '../../lib/supabase'
 
 export default function LoginPage({ onAuth }) {
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -18,7 +20,24 @@ export default function LoginPage({ onAuth }) {
         setLoading(false)
         return
       }
-      const { error } = await onAuth.signUp(email, password, fullName)
+      if (!inviteCode.trim()) {
+        setError('Invite code is required — ask your shop admin')
+        setLoading(false)
+        return
+      }
+
+      // Validate invite code first
+      const { data: validation, error: valError } = await supabase
+        .rpc('validate_invite_code', { invite_code: inviteCode.toUpperCase().trim() })
+
+      if (valError || !validation?.valid) {
+        setError('Invalid or expired invite code')
+        setLoading(false)
+        return
+      }
+
+      // Sign up with invite code in metadata
+      const { error } = await onAuth.signUp(email, password, fullName, inviteCode.toUpperCase().trim())
       if (error) setError(error.message)
       else setError('Check your email to confirm your account')
     } else {
@@ -39,6 +58,9 @@ export default function LoginPage({ onAuth }) {
       fontFamily: "'Rajdhani', sans-serif",
       padding: 20,
     }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+      `}</style>
       <div style={{
         background: '#13131c',
         border: '1px solid #28283a',
@@ -83,34 +105,41 @@ export default function LoginPage({ onAuth }) {
         </div>
 
         {isSignUp && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{
-              fontSize: 9,
-              fontFamily: "'DM Mono', monospace",
-              color: '#606090',
-              letterSpacing: 1.5,
-              marginBottom: 4,
-              textTransform: 'uppercase',
-            }}>Full Name</div>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="Your full name"
-              style={inputStyle}
-            />
-          </div>
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <div style={labelStyle}>Invite Code <span style={{ color: '#f97316' }}>*</span></div>
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
+                placeholder="6-digit code from your admin"
+                maxLength={6}
+                style={{
+                  ...inputStyle,
+                  textAlign: 'center',
+                  fontSize: 20,
+                  fontWeight: 700,
+                  letterSpacing: 6,
+                  fontFamily: "'DM Mono', monospace",
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={labelStyle}>Full Name <span style={{ color: '#f97316' }}>*</span></div>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Your full name"
+                style={inputStyle}
+              />
+            </div>
+          </>
         )}
 
         <div style={{ marginBottom: 12 }}>
-          <div style={{
-            fontSize: 9,
-            fontFamily: "'DM Mono', monospace",
-            color: '#606090',
-            letterSpacing: 1.5,
-            marginBottom: 4,
-            textTransform: 'uppercase',
-          }}>Email</div>
+          <div style={labelStyle}>Email</div>
           <input
             type="email"
             value={email}
@@ -121,14 +150,7 @@ export default function LoginPage({ onAuth }) {
         </div>
 
         <div style={{ marginBottom: 20 }}>
-          <div style={{
-            fontSize: 9,
-            fontFamily: "'DM Mono', monospace",
-            color: '#606090',
-            letterSpacing: 1.5,
-            marginBottom: 4,
-            textTransform: 'uppercase',
-          }}>Password</div>
+          <div style={labelStyle}>Password</div>
           <input
             type="password"
             value={password}
@@ -192,12 +214,21 @@ export default function LoginPage({ onAuth }) {
           >
             {isSignUp
               ? 'Already have an account? Sign in'
-              : "Need an account? Create one"}
+              : "Need an account? Ask your admin for a code"}
           </button>
         </div>
       </div>
     </div>
   )
+}
+
+const labelStyle = {
+  fontSize: 9,
+  fontFamily: "'DM Mono', monospace",
+  color: '#606090',
+  letterSpacing: 1.5,
+  marginBottom: 4,
+  textTransform: 'uppercase',
 }
 
 const inputStyle = {
